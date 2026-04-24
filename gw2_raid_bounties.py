@@ -157,32 +157,39 @@ def fetch_clear_data(kp_id):
     except Exception:
         return None
 
+def get_mapping_data(boss_name):
+    """Resolves a boss name to its (category, api_key) using MAPPING."""
+    name_low = boss_name.lower()
+    
+    # 1. Try exact match (case insensitive)
+    for m_name, (cat, key) in MAPPING.items():
+        if m_name.lower() == name_low:
+            return cat, key
+            
+    # 2. Try fuzzy match - sort by length descending to prefer more specific matches
+    # This prevents "Qadim" matching "Qadim the Peerless" incorrectly.
+    sorted_items = sorted(MAPPING.items(), key=lambda x: len(x[0]), reverse=True)
+    for m_name, (cat, key) in sorted_items:
+        m_low = m_name.lower()
+        if m_low in name_low or name_low in m_low:
+            return cat, key
+            
+    return None, None
+
 def get_api_key(boss_name):
     """Resolves a boss name to its API key used in Killproof.me clears."""
-    if boss_name in MAPPING:
-        return MAPPING[boss_name][1]
-    
-    # Fuzzy match
-    for map_name, (cat, key) in MAPPING.items():
-        if map_name.lower() in boss_name.lower() or boss_name.lower() in map_name.lower():
-            return key
-            
-    return boss_name
+    cat, key = get_mapping_data(boss_name)
+    return key if key else boss_name
 
 def check_boss_status(boss_name, clear_data):
     """Returns (status, category) where status is '✅ Completed' or '❌ Missing'."""
-    category = "unknown"
-    if boss_name in MAPPING:
-        category = MAPPING[boss_name][0]
-    else:
-        # Fuzzy match to find category
-        for map_name, (cat, key) in MAPPING.items():
-            if map_name.lower() in boss_name.lower() or boss_name.lower() in map_name.lower():
-                category = cat
-                break
-                
-    api_key = get_api_key(boss_name)
+    category, api_key = get_mapping_data(boss_name)
     
+    if not category:
+        category = "unknown"
+    if not api_key:
+        api_key = boss_name
+                
     # Check clears
     for category_name, bosses in clear_data.items():
         if isinstance(bosses, list):
