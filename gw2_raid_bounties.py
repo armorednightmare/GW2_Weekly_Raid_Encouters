@@ -6,6 +6,10 @@ from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
 
+# Force UTF-8 output on Windows to support Unicode/emoji characters
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+
 # --- CONFIGURATION ---
 DEFAULT_KP_ID = "257ex"
 WIKI_URL = "https://wiki.guildwars2.com/wiki/Daily_Raid_Bounties"
@@ -239,7 +243,7 @@ def main():
         boss = today_bounties[cat]
         status, category = check_boss_status(boss, clear_data)
         
-        status_style = "green" if "Completed" in status else "red"
+        status_style = "green" if "✅" in status else "red"
         # Optional: tag strikes in the table
         display_boss = boss + " [dim](Strike)[/dim]" if category == "strike" else boss
         table_today.add_row(cat, display_boss, f"[{status_style}]{status}[/{status_style}]")
@@ -268,55 +272,45 @@ def main():
     else:
         console.print("\n[green]✔ No missing raid bounties from earlier this week![/green]")
 
-    # --- VIEW 3: WEEKLY RAID PROGRESS / MISSING ENCOUNTERS ---
-    upcoming_bounties = {}  # boss_name -> List[day_str]
+    # --- VIEW 3: COMPLETE WEEKLY RAID OVERVIEW (Today → Sun) ---
+    # Build map: boss_api_key -> list of upcoming day strings (today included)
+    upcoming_bounties = {}  # api_key (lower) -> List[day_str]
     for i in range(days_since_monday, 7):
         target_date = monday_reset + datetime.timedelta(days=i)
         day_name = target_date.strftime("%a")
         day_bounties = get_bounties_for_date(rotation_data, target_date)
         for boss in day_bounties.values():
-            boss_low = boss.lower()
-            if boss_low not in upcoming_bounties:
-                upcoming_bounties[boss_low] = []
-            upcoming_bounties[boss_low].append(day_name)
-            
-    table_final = Table(title="3) Missing Raid Bosses (Remaining Opportunities)", show_header=True, header_style="bold magenta")
-    table_final.add_column("Raid Encounter", style="bold white")
-    table_final.add_column("Bounty Day", style="italic cyan", justify="center")
+            _, cat = get_mapping_data(boss)
+            key = (cat or boss).lower()
+            if key not in upcoming_bounties:
+                upcoming_bounties[key] = []
+            upcoming_bounties[key].append(day_name)
 
-    total_missing = 0
+    table_full = Table(title="3) All Raid Bosses – Weekly Overview", show_header=True, header_style="bold magenta")
+    table_full.add_column("Raid Encounter", style="bold white")
+    table_full.add_column("Status", justify="center", no_wrap=True)
+    table_full.add_column("Upcoming Bounty", style="italic cyan", justify="center")
+
     for wing_name, bosses in ALL_RAID_WINGS.items():
-        wing_added = False
+        table_full.add_section()
+        table_full.add_row(f"[bold cyan]{wing_name}[/bold cyan]", "", "")
         for boss in bosses:
             status, category = check_boss_status(boss, clear_data)
-            if status == "❌ Missing":
-                # Find matching upcoming bounty
-                bounty_days = []
-                boss_api_key = get_api_key(boss).lower()
-                
-                for up_boss_name, days in upcoming_bounties.items():
-                    if boss_api_key == get_api_key(up_boss_name).lower():
-                        bounty_days.extend(days)
-                
-                note = ""
-                if bounty_days:
-                    # e.g., (Mon) (Wed)
-                    note = " ".join(f"({d})" for d in bounty_days)
-                else:
-                    note = "[dim]No bounty left[/dim]"
-                
-                if not wing_added:
-                    table_final.add_section()
-                    table_final.add_row(f"[bold cyan]{wing_name}[/bold cyan]", "")
-                    wing_added = True
-                    
-                table_final.add_row(f"  {boss}", note)
-                total_missing += 1
+            is_completed = (status == "✅ Completed")
 
-    if total_missing > 0:
-        console.print(table_final)
-    else:
-        console.print("\n[bold green]🏆 All Raid Bosses have been completed for this week![/bold green]")
+            # Find upcoming bounty days for this boss
+            boss_api_key = get_api_key(boss).lower()
+            bounty_days = []
+            for up_key, days in upcoming_bounties.items():
+                if boss_api_key == up_key or boss_api_key in up_key or up_key in boss_api_key:
+                    bounty_days.extend(days)
+
+            bounty_note = " ".join(f"({d})" for d in bounty_days) if bounty_days else "[dim]—[/dim]"
+            status_str = "[green]✅ Done[/green]" if is_completed else "[red]❌ Missing[/red]"
+
+            table_full.add_row(f"  {boss}", status_str, bounty_note)
+
+    console.print(table_full)
     input('Press ENTER to exit')
 
 if __name__ == "__main__":
