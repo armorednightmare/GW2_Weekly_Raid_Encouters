@@ -286,7 +286,7 @@ def main():
     console.print(table_today)
 
     # --- VIEW 2: WEEKLY MISSING BOUNTIES (Mon -> Today) ---
-    table_weekly = Table(title="2) Missing Raid Bounties from this week (Mon -> Today)", show_header=True, header_style="bold yellow")
+    table_weekly = Table(title="2) Missing Bounties from this week (Mon -> Today)", show_header=True, header_style="bold yellow")
     table_weekly.add_column("Date", style="dim")
     table_weekly.add_column("Bounty Boss", style="bold white")
     table_weekly.add_column("Status", justify="center")
@@ -297,15 +297,15 @@ def main():
         day_bounties = get_bounties_for_date(rotation_data, target_date)
         for boss in day_bounties.values():
             status, category = check_boss_status(boss, clear_data)
-            # ONLY RAIDS in the missing list
-            if category == "raid" and status == "❌ Missing":
-                table_weekly.add_row(target_date.strftime("%a %d.%m"), boss, "[red]❌ Missing[/red]")
+            if status == "❌ Missing":
+                display_boss = boss + " [dim](Strike)[/dim]" if category == "strike" else boss
+                table_weekly.add_row(target_date.strftime("%a %d.%m"), display_boss, "[red]❌ Missing[/red]")
                 has_missing_weekly = True
     
     if has_missing_weekly:
         console.print(table_weekly)
     else:
-        console.print("\n[green]✔ No missing raid bounties from earlier this week![/green]")
+        console.print("\n[green]✔ No missing bounties from earlier this week![/green]")
 
     # --- SHARED DATA FOR OVERVIEW TABLES ---
     # Build map: api_key -> list of upcoming day strings (today included)
