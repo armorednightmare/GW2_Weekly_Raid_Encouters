@@ -101,6 +101,14 @@ ALL_RAID_WINGS = {
     "Wing 8: Mount Balrior": ["Ruined Camp", "Greer, the Blightbringer", "Decima, the Stormsinger", "Ura, the Steamshrieker"]
 }
 
+# --- ALL STRIKE MISSIONS ---
+ALL_STRIKES = {
+    "IBS Strikes": ["Shiverpeaks Pass", "Voice and Claw", "Fraenir of Jormag", "Whisper of Jormag", "Boneskinner", "Cold War"],
+    "EoD Strikes": ["Aetherblade Hideout", "Xunlai Jade Junkyard", "Kaineng Overlook", "Harvest Temple", "Old Lion's Court"],
+    "SotO Strikes": ["Cosmic Observatory", "Temple of Febe"],
+    "JW Strikes": ["Guardian's Glade"]
+}
+
 def fetch_wiki_rotation():
     """Scrapes the bounty rotation directly from GW2 Wiki."""
     try:
@@ -208,6 +216,33 @@ def check_boss_status(boss_name, clear_data):
                     
     return "❌ Missing", category
 
+def generate_overview_table(title, data_dict, upcoming_bounties, clear_data):
+    """Generates a rich Table for a given set of encounters (Raid Wings or Strikes)."""
+    table = Table(title=title, show_header=True, header_style="bold magenta")
+    table.add_column("Encounter", style="bold white")
+    table.add_column("Status", justify="center", no_wrap=True)
+    table.add_column("Upcoming Bounty", style="italic cyan", justify="center")
+
+    for section_name, bosses in data_dict.items():
+        table.add_section()
+        table.add_row(f"[bold cyan]{section_name}[/bold cyan]", "", "")
+        for boss in bosses:
+            status, _ = check_boss_status(boss, clear_data)
+            is_completed = ("Completed" in status or "✅" in status)
+
+            # Find upcoming bounty days for this boss
+            boss_api_key = get_api_key(boss).lower()
+            bounty_days = []
+            for up_key, days in upcoming_bounties.items():
+                if boss_api_key == up_key or boss_api_key in up_key or up_key in boss_api_key:
+                    bounty_days.extend(days)
+
+            bounty_note = " ".join(f"({d})" for d in bounty_days) if bounty_days else "[dim]—[/dim]"
+            status_str = "[green]✅ Done[/green]" if is_completed else "[red]❌ Missing[/red]"
+
+            table.add_row(f"  {boss}", status_str, bounty_note)
+    return table
+
 def main():
     console = Console()
     kp_id = DEFAULT_KP_ID
@@ -272,45 +307,28 @@ def main():
     else:
         console.print("\n[green]✔ No missing raid bounties from earlier this week![/green]")
 
-    # --- VIEW 3: COMPLETE WEEKLY RAID OVERVIEW (Today → Sun) ---
-    # Build map: boss_api_key -> list of upcoming day strings (today included)
+    # --- SHARED DATA FOR OVERVIEW TABLES ---
+    # Build map: api_key -> list of upcoming day strings (today included)
     upcoming_bounties = {}  # api_key (lower) -> List[day_str]
     for i in range(days_since_monday, 7):
         target_date = monday_reset + datetime.timedelta(days=i)
         day_name = target_date.strftime("%a")
         day_bounties = get_bounties_for_date(rotation_data, target_date)
         for boss in day_bounties.values():
-            _, cat = get_mapping_data(boss)
-            key = (cat or boss).lower()
+            _, cat_key = get_mapping_data(boss)
+            key = (cat_key or boss).lower()
             if key not in upcoming_bounties:
                 upcoming_bounties[key] = []
             upcoming_bounties[key].append(day_name)
 
-    table_full = Table(title="3) All Raid Bosses – Weekly Overview", show_header=True, header_style="bold magenta")
-    table_full.add_column("Raid Encounter", style="bold white")
-    table_full.add_column("Status", justify="center", no_wrap=True)
-    table_full.add_column("Upcoming Bounty", style="italic cyan", justify="center")
+    # --- VIEW 3: COMPLETE WEEKLY RAID OVERVIEW ---
+    table_raids = generate_overview_table("3) All Raid Bosses – Weekly Overview", ALL_RAID_WINGS, upcoming_bounties, clear_data)
+    console.print(table_raids)
 
-    for wing_name, bosses in ALL_RAID_WINGS.items():
-        table_full.add_section()
-        table_full.add_row(f"[bold cyan]{wing_name}[/bold cyan]", "", "")
-        for boss in bosses:
-            status, category = check_boss_status(boss, clear_data)
-            is_completed = (status == "✅ Completed")
+    # --- VIEW 4: COMPLETE WEEKLY STRIKE OVERVIEW ---
+    table_strikes = generate_overview_table("4) All Strike Missions – Weekly Overview", ALL_STRIKES, upcoming_bounties, clear_data)
+    console.print(table_strikes)
 
-            # Find upcoming bounty days for this boss
-            boss_api_key = get_api_key(boss).lower()
-            bounty_days = []
-            for up_key, days in upcoming_bounties.items():
-                if boss_api_key == up_key or boss_api_key in up_key or up_key in boss_api_key:
-                    bounty_days.extend(days)
-
-            bounty_note = " ".join(f"({d})" for d in bounty_days) if bounty_days else "[dim]—[/dim]"
-            status_str = "[green]✅ Done[/green]" if is_completed else "[red]❌ Missing[/red]"
-
-            table_full.add_row(f"  {boss}", status_str, bounty_note)
-
-    console.print(table_full)
     input('Press ENTER to exit')
 
 if __name__ == "__main__":
