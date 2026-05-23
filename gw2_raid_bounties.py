@@ -172,35 +172,77 @@ def fetch_clear_data(kp_id):
         return None
 
 def fetch_gw2_api_clears(api_key):
-    """Fetches strike/raid clear data from official GW2 API (Achievement 9125)."""
+    """Fetches strike/raid clear data from official GW2 API."""
     try:
-        ach_id = 9125
-        # Fetch static achievement data
-        res_static = requests.get(f"https://api.guildwars2.com/v2/achievements?ids={ach_id}", timeout=10)
-        if res_static.status_code != 200:
-            return None
-        static_data = res_static.json()[0]
-        bits_map = {idx: bit["text"] for idx, bit in enumerate(static_data.get("bits", []))}
-
-        # Fetch personal progress
         headers = {"Authorization": f"Bearer {api_key}"}
-        res_acc = requests.get("https://api.guildwars2.com/v2/account/achievements", headers=headers, timeout=10)
-        if res_acc.status_code != 200:
-            return None
-        
-        acc_data = res_acc.json()
-        my_progress = next((ach for ach in acc_data if ach["id"] == ach_id), None)
-        
-        gw2_api_clears = {}
-        if my_progress and "bits" in my_progress:
-            for bit in my_progress["bits"]:
-                if bit in bits_map:
-                    strike_name = bits_map[bit]
-                    if strike_name == "Voice of the Fallen and Claw of the Fallen":
-                        strike_name = "Voice and Claw"
-                    gw2_api_clears[strike_name] = 1
-        
-        return {"GW2_API_Strikes": gw2_api_clears}
+        result = {}
+
+        # 1. Fetch Strikes (Achievement 9125)
+        ach_id = 9125
+        res_static = requests.get(f"https://api.guildwars2.com/v2/achievements?ids={ach_id}", timeout=10)
+        if res_static.status_code == 200:
+            static_data = res_static.json()[0]
+            bits_map = {idx: bit["text"] for idx, bit in enumerate(static_data.get("bits", []))}
+
+            res_acc = requests.get("https://api.guildwars2.com/v2/account/achievements", headers=headers, timeout=10)
+            if res_acc.status_code == 200:
+                acc_data = res_acc.json()
+                my_progress = next((ach for ach in acc_data if ach["id"] == ach_id), None)
+                
+                gw2_api_strikes = {}
+                if my_progress and "bits" in my_progress:
+                    for bit in my_progress["bits"]:
+                        if bit in bits_map:
+                            strike_name = bits_map[bit]
+                            if strike_name == "Voice of the Fallen and Claw of the Fallen":
+                                strike_name = "Voice and Claw"
+                            gw2_api_strikes[strike_name] = 1
+                result["GW2_API_Strikes"] = gw2_api_strikes
+
+        # 2. Fetch Raids (account/raids)
+        GW2_API_RAID_MAP = {
+            "vale_guardian": "Vale Guardian",
+            "spirit_woods": "Spirit Woods",
+            "gorseval": "Gorseval",
+            "sabetha": "Sabetha",
+            "slothasor": "Slothasor",
+            "bandit_trio": "Bandit Trio",
+            "matthias": "Matthias",
+            "escort": "Escort",
+            "keep_construct": "Keep Construct",
+            "twisted_castle": "Twisted Castle",
+            "xera": "Xera",
+            "cairn": "Cairn",
+            "mursaat_overseer": "Mursaat Overseer",
+            "samarog": "Samarog",
+            "deimos": "Deimos",
+            "soulless_horror": "Soulless Horror",
+            "river_of_souls": "River of Souls",
+            "statues_of_grenth": "Statues of Grenth",
+            "voice_in_the_void": "Voice in the Void",
+            "conjured_amalgamate": "Conjured Amalgamate",
+            "twin_largos": "Twin Largos",
+            "qadim": "Qadim",
+            "gate": "Gate",
+            "adina": "Cardinal Adina",
+            "sabir": "Cardinal Sabir",
+            "qadim_the_peerless": "Qadim the Peerless",
+            "greer": "Greer, the Blightbringer",
+            "decima": "Decima, the Stormsinger",
+            "ura": "Ura, the Steamshrieker",
+            "ruined_camp": "Ruined Camp"
+        }
+        res_raids = requests.get("https://api.guildwars2.com/v2/account/raids", headers=headers, timeout=10)
+        if res_raids.status_code == 200:
+            gw2_api_raids = {}
+            for raid_id in res_raids.json():
+                if raid_id in GW2_API_RAID_MAP:
+                    gw2_api_raids[GW2_API_RAID_MAP[raid_id]] = 1
+                else:
+                    gw2_api_raids[raid_id.replace("_", " ").title()] = 1
+            result["GW2_API_Raids"] = gw2_api_raids
+            
+        return result if result else None
     except Exception:
         return None
 
@@ -229,7 +271,7 @@ def get_api_key(boss_name):
     return key if key else boss_name
 
 def check_boss_status(boss_name, clear_data):
-    """Returns (status, category) where status is '✅ Done   ' or '❌ Missing'."""
+    """Returns (status, category) where status is '✅ Done   ', '✅ Done ✔ ', or '❌ Missing'."""
     category, api_key = get_mapping_data(boss_name)
     
     if not category:
@@ -237,18 +279,31 @@ def check_boss_status(boss_name, clear_data):
     if not api_key:
         api_key = boss_name
                 
-    # Check clears
+    is_kp_done = False
+    is_gw2_done = False
+
     for category_name, bosses in clear_data.items():
+        is_gw2_api_category = category_name.startswith("GW2_API_")
+        
         if isinstance(bosses, list):
             for boss_obj in bosses:
                 for k, v in boss_obj.items():
-                    if api_key.lower() == k.lower():
-                        return ("✅ Done   ", category) if v == 1 else ("❌ Missing", category)
+                    if api_key.lower() == k.lower() and v == 1:
+                        if is_gw2_api_category:
+                            is_gw2_done = True
+                        else:
+                            is_kp_done = True
         elif isinstance(bosses, dict):
             for k, v in bosses.items():
-                if api_key.lower() == k.lower():
-                    return ("✅ Done   ", category) if v == 1 else ("❌ Missing", category)
-                    
+                if api_key.lower() == k.lower() and v == 1:
+                    if is_gw2_api_category:
+                        is_gw2_done = True
+                    else:
+                        is_kp_done = True
+                        
+    if is_gw2_done or is_kp_done:
+        return ("✅ Done ✔ ", category) if is_kp_done else ("✅ Done   ", category)
+        
     return "❌ Missing", category
 
 def generate_overview_table(title, data_dict, upcoming_bounties, clear_data, today_name=None):
@@ -384,6 +439,8 @@ def main():
     grid.add_row(table_today, view2_renderable)
     grid.add_row(table_raids, table_strikes)
     console.print(grid)
+
+    console.print("[dim]* ✔ indicates the clear is also registered on Killproof.me[/dim]\n")
 
     input('Press ENTER to exit')
 
