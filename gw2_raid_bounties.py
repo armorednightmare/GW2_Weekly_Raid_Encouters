@@ -169,6 +169,39 @@ def fetch_clear_data(kp_id):
     except Exception:
         return None
 
+def fetch_gw2_api_clears(api_key):
+    """Fetches strike/raid clear data from official GW2 API (Achievement 9125)."""
+    try:
+        ach_id = 9125
+        # Fetch static achievement data
+        res_static = requests.get(f"https://api.guildwars2.com/v2/achievements?ids={ach_id}", timeout=10)
+        if res_static.status_code != 200:
+            return None
+        static_data = res_static.json()[0]
+        bits_map = {idx: bit["text"] for idx, bit in enumerate(static_data.get("bits", []))}
+
+        # Fetch personal progress
+        headers = {"Authorization": f"Bearer {api_key}"}
+        res_acc = requests.get("https://api.guildwars2.com/v2/account/achievements", headers=headers, timeout=10)
+        if res_acc.status_code != 200:
+            return None
+        
+        acc_data = res_acc.json()
+        my_progress = next((ach for ach in acc_data if ach["id"] == ach_id), None)
+        
+        gw2_api_clears = {}
+        if my_progress and "bits" in my_progress:
+            for bit in my_progress["bits"]:
+                if bit in bits_map:
+                    strike_name = bits_map[bit]
+                    if strike_name == "Voice of the Fallen and Claw of the Fallen":
+                        strike_name = "Voice and Claw"
+                    gw2_api_clears[strike_name] = 1
+        
+        return {"GW2_API_Strikes": gw2_api_clears}
+    except Exception:
+        return None
+
 def get_mapping_data(boss_name):
     """Resolves a boss name to its (category, api_key) using MAPPING."""
     name_low = boss_name.lower()
@@ -246,8 +279,12 @@ def generate_overview_table(title, data_dict, upcoming_bounties, clear_data):
 def main():
     console = Console()
     kp_id = DEFAULT_KP_ID
+    gw2_api_key = None
+    
     if len(sys.argv) > 1:
         kp_id = sys.argv[1]
+    if len(sys.argv) > 2:
+        gw2_api_key = sys.argv[2]
     
     console.print(Panel.fit(f"[bold green]GW2 Daily Bounty Tracker[/bold green]\nProfile: [cyan]{kp_id}[/cyan]", border_style="magenta"))
     
@@ -263,9 +300,19 @@ def main():
     with console.status("[bold yellow]Fetching Killproof.me clears...[/bold yellow]"):
         clear_data = fetch_clear_data(kp_id)
     
-    if not clear_data:
+    if not clear_data and not gw2_api_key:
         console.print("[bold red]Error: Could not retrieve clear data from Killproof.me.[/bold red]")
         return
+    if not clear_data:
+        clear_data = {}
+
+    if gw2_api_key:
+        with console.status("[bold yellow]Fetching official GW2 API clears...[/bold yellow]"):
+            gw2_clears = fetch_gw2_api_clears(gw2_api_key)
+            if gw2_clears:
+                clear_data.update(gw2_clears)
+            else:
+                console.print("[bold red]Warning: Could not retrieve or parse official GW2 API data.[/bold red]")
 
     # --- VIEW 1: TODAY'S BOUNTIES ---
     today_bounties = get_bounties_for_date(rotation_data, now_utc)
