@@ -5,6 +5,7 @@ from bs4 import BeautifulSoup
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
+from rich.columns import Columns
 
 # Force UTF-8 output on Windows to support Unicode/emoji characters
 if hasattr(sys.stdout, "reconfigure"):
@@ -12,6 +13,7 @@ if hasattr(sys.stdout, "reconfigure"):
 
 # --- CONFIGURATION ---
 DEFAULT_KP_ID = "257ex"
+DEFAULT_GW2_API_KEY = ""
 WIKI_URL = "https://wiki.guildwars2.com/wiki/Daily_Raid_Bounties"
 
 # --- FALLBACK ROTATION DATA ---
@@ -227,7 +229,7 @@ def get_api_key(boss_name):
     return key if key else boss_name
 
 def check_boss_status(boss_name, clear_data):
-    """Returns (status, category) where status is '✅ Completed' or '❌ Missing'."""
+    """Returns (status, category) where status is '✅ Done   ' or '❌ Missing'."""
     category, api_key = get_mapping_data(boss_name)
     
     if not category:
@@ -241,19 +243,19 @@ def check_boss_status(boss_name, clear_data):
             for boss_obj in bosses:
                 for k, v in boss_obj.items():
                     if api_key.lower() == k.lower():
-                        return ("✅ Completed", category) if v == 1 else ("❌ Missing", category)
+                        return ("✅ Done   ", category) if v == 1 else ("❌ Missing", category)
         elif isinstance(bosses, dict):
             for k, v in bosses.items():
                 if api_key.lower() == k.lower():
-                    return ("✅ Completed", category) if v == 1 else ("❌ Missing", category)
+                    return ("✅ Done   ", category) if v == 1 else ("❌ Missing", category)
                     
     return "❌ Missing", category
 
-def generate_overview_table(title, data_dict, upcoming_bounties, clear_data):
+def generate_overview_table(title, data_dict, upcoming_bounties, clear_data, today_name=None):
     """Generates a rich Table for a given set of encounters (Raid Wings or Strikes)."""
     table = Table(title=title, show_header=True, header_style="bold magenta")
     table.add_column("Encounter", style="bold white")
-    table.add_column("Status", justify="center", no_wrap=True)
+    table.add_column("Status", justify="left", no_wrap=True)
     table.add_column("Upcoming Bounty", style="italic cyan", justify="center")
 
     for section_name, bosses in data_dict.items():
@@ -261,7 +263,7 @@ def generate_overview_table(title, data_dict, upcoming_bounties, clear_data):
         table.add_row(f"[bold cyan]{section_name}[/bold cyan]", "", "")
         for boss in bosses:
             status, _ = check_boss_status(boss, clear_data)
-            is_completed = ("Completed" in status or "✅" in status)
+            is_completed = ("Done" in status or "✅" in status)
 
             # Find upcoming bounty days for this boss
             boss_api_key = get_api_key(boss).lower()
@@ -270,8 +272,15 @@ def generate_overview_table(title, data_dict, upcoming_bounties, clear_data):
                 if boss_api_key == up_key or boss_api_key in up_key or up_key in boss_api_key:
                     bounty_days.extend(days)
 
-            bounty_note = " ".join(f"({d})" for d in bounty_days) if bounty_days else "[dim]—[/dim]"
-            status_str = "[green]✅ Done[/green]" if is_completed else "[red]❌ Missing[/red]"
+            formatted_days = []
+            for d in bounty_days:
+                if d == today_name:
+                    formatted_days.append(f"[bold green]({d})[/bold green]")
+                else:
+                    formatted_days.append(f"({d})")
+
+            bounty_note = " ".join(formatted_days) if formatted_days else "[dim]—[/dim]"
+            status_str = f"[green]{status}[/green]" if is_completed else f"[red]{status}[/red]"
 
             table.add_row(f"  {boss}", status_str, bounty_note)
     return table
@@ -279,7 +288,7 @@ def generate_overview_table(title, data_dict, upcoming_bounties, clear_data):
 def main():
     console = Console()
     kp_id = DEFAULT_KP_ID
-    gw2_api_key = None
+    gw2_api_key = DEFAULT_GW2_API_KEY if DEFAULT_GW2_API_KEY else None
     
     if len(sys.argv) > 1:
         kp_id = sys.argv[1]
@@ -319,7 +328,7 @@ def main():
     table_today = Table(title=f"1) Daily Bounties: {now_utc.strftime('%Y-%m-%d')}", show_header=True, header_style="bold cyan")
     table_today.add_column("Category", style="dim")
     table_today.add_column("Bounty Boss", style="bold white")
-    table_today.add_column("Status", justify="center")
+    table_today.add_column("Status", justify="left")
 
     for cat in ["Boss 1", "Boss 2", "Boss 3", "Boss 4"]:
         boss = today_bounties[cat]
@@ -330,13 +339,11 @@ def main():
         display_boss = boss + " [dim](Strike)[/dim]" if category == "strike" else boss
         table_today.add_row(cat, display_boss, f"[{status_style}]{status}[/{status_style}]")
     
-    console.print(table_today)
-
     # --- VIEW 2: WEEKLY MISSING BOUNTIES (Mon -> Today) ---
     table_weekly = Table(title="2) Missing Bounties from this week (Mon -> Today)", show_header=True, header_style="bold yellow")
     table_weekly.add_column("Date", style="dim")
     table_weekly.add_column("Bounty Boss", style="bold white")
-    table_weekly.add_column("Status", justify="center")
+    table_weekly.add_column("Status", justify="left")
 
     has_missing_weekly = False
     for i in range(days_since_monday + 1):
@@ -344,16 +351,13 @@ def main():
         day_bounties = get_bounties_for_date(rotation_data, target_date)
         for boss in day_bounties.values():
             status, category = check_boss_status(boss, clear_data)
-            if status == "❌ Missing":
+            if "Missing" in status:
                 display_boss = boss + " [dim](Strike)[/dim]" if category == "strike" else boss
-                table_weekly.add_row(target_date.strftime("%a %d.%m"), display_boss, "[red]❌ Missing[/red]")
+                table_weekly.add_row(target_date.strftime("%a %d.%m"), display_boss, f"[red]{status}[/red]")
                 has_missing_weekly = True
     
-    if has_missing_weekly:
-        console.print(table_weekly)
-    else:
-        console.print("\n[green]✔ No missing bounties from earlier this week![/green]")
-
+    view2_renderable = table_weekly if has_missing_weekly else Panel("[green]✔ No missing bounties from earlier this week![/green]", border_style="green")
+    
     # --- SHARED DATA FOR OVERVIEW TABLES ---
     # Build map: api_key -> list of upcoming day strings (today included)
     upcoming_bounties = {}  # api_key (lower) -> List[day_str]
@@ -369,12 +373,17 @@ def main():
             upcoming_bounties[key].append(day_name)
 
     # --- VIEW 3: COMPLETE WEEKLY RAID OVERVIEW ---
-    table_raids = generate_overview_table("3) All Raid Bosses – Weekly Overview", ALL_RAID_WINGS, upcoming_bounties, clear_data)
-    console.print(table_raids)
+    today_name = now_utc.strftime("%a")
+    table_raids = generate_overview_table("3) All Raid Bosses – Weekly Overview", ALL_RAID_WINGS, upcoming_bounties, clear_data, today_name)
 
     # --- VIEW 4: COMPLETE WEEKLY STRIKE OVERVIEW ---
-    table_strikes = generate_overview_table("4) All Strike Missions – Weekly Overview", ALL_STRIKES, upcoming_bounties, clear_data)
-    console.print(table_strikes)
+    table_strikes = generate_overview_table("4) All Strike Missions – Weekly Overview", ALL_STRIKES, upcoming_bounties, clear_data, today_name)
+
+    # Combine into a single grid to ensure consistent column alignment
+    grid = Table.grid(padding=(1, 4))
+    grid.add_row(table_today, view2_renderable)
+    grid.add_row(table_raids, table_strikes)
+    console.print(grid)
 
     input('Press ENTER to exit')
 
