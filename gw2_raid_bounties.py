@@ -322,10 +322,7 @@ def generate_overview_table(title, data_dict, upcoming_bounties, clear_data, tod
 
             # Find upcoming bounty days for this boss
             boss_api_key = get_api_key(boss).lower()
-            bounty_days = []
-            for up_key, days in upcoming_bounties.items():
-                if boss_api_key == up_key or boss_api_key in up_key or up_key in boss_api_key:
-                    bounty_days.extend(days)
+            bounty_days = upcoming_bounties.get(boss_api_key, [])
 
             formatted_days = []
             for d in bounty_days:
