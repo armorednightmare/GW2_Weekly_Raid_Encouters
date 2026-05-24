@@ -195,8 +195,14 @@ def fetch_gw2_api_clears(api_key):
                 my_progress = next((ach for ach in acc_data if ach["id"] == ach_id), None)
                 
                 gw2_api_strikes = {}
-                if my_progress and "bits" in my_progress:
-                    for bit in my_progress["bits"]:
+                if my_progress:
+                    completed_bits = []
+                    if my_progress.get("done", False):
+                        completed_bits = list(bits_map.keys())
+                    elif "bits" in my_progress:
+                        completed_bits = my_progress["bits"]
+                        
+                    for bit in completed_bits:
                         if bit in bits_map:
                             strike_name = bits_map[bit]
                             if strike_name == "Voice of the Fallen and Claw of the Fallen":
