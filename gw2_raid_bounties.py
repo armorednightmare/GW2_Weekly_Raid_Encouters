@@ -1,6 +1,8 @@
 import sys
 import requests
 import datetime
+import os
+from dotenv import load_dotenv
 from bs4 import BeautifulSoup
 from rich.console import Console
 from rich.table import Table
@@ -11,9 +13,12 @@ from rich.columns import Columns
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
+# Load environment variables
+load_dotenv()
+
 # --- CONFIGURATION ---
 DEFAULT_KP_ID = "257ex"
-DEFAULT_GW2_API_KEY = ""
+DEFAULT_GW2_API_KEY = os.environ.get("GW2_API_KEY", "")
 WIKI_URL = "https://wiki.guildwars2.com/wiki/Daily_Raid_Bounties"
 
 # --- FALLBACK ROTATION DATA ---
