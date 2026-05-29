@@ -346,7 +346,22 @@ def generate_overview_table(title, data_dict, upcoming_bounties, clear_data, tod
             status_str = f"[green]{status}[/green]" if is_completed else f"[red]{status}[/red]"
 
             table.add_row(f"  {boss}", status_str, bounty_note)
-    return table
+def get_key_press(prompt):
+    print(prompt, end="", flush=True)
+    try:
+        import msvcrt
+        char = msvcrt.getch()
+        if char in (b'\x00', b'\xe0'):
+            msvcrt.getch()  # consume second byte of special keys
+            print()
+            return ""
+        val = char.decode('utf-8', errors='ignore').lower()
+        print()
+        return val
+    except ImportError:
+        # Fallback to standard input on non-Windows
+        val = input().strip().lower()
+        return val
 
 def main():
     console = Console()
@@ -376,7 +391,7 @@ def main():
         
         if not clear_data and not gw2_api_key:
             console.print("[bold red]Error: Could not retrieve clear data from Killproof.me.[/bold red]")
-            user_choice = input('\nPress [R] to Retry, [Q] to Quit: ').strip().lower()
+            user_choice = get_key_press('\nPress [R] to Retry, [Q] to Quit: ')
             if user_choice == 'q':
                 break
             continue
@@ -454,7 +469,7 @@ def main():
 
         console.print("[dim]* ✔ indicates the clear is also registered on Killproof.me[/dim]\n")
 
-        user_choice = input("Press [R] to Refresh, [Q] to Quit: ").strip().lower()
+        user_choice = get_key_press("Press [R] to Refresh, [Q] to Quit: ")
         if user_choice == 'q':
             break
 
