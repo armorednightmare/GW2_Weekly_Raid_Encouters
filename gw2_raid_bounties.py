@@ -346,6 +346,8 @@ def generate_overview_table(title, data_dict, upcoming_bounties, clear_data, tod
             status_str = f"[green]{status}[/green]" if is_completed else f"[red]{status}[/red]"
 
             table.add_row(f"  {boss}", status_str, bounty_note)
+    return table
+
 def get_key_press(prompt):
     print(prompt, end="", flush=True)
     try:
