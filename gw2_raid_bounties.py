@@ -358,99 +358,105 @@ def main():
     if len(sys.argv) > 2:
         gw2_api_key = sys.argv[2]
     
-    console.print(Panel.fit(f"[bold green]GW2 Daily Bounty Tracker[/bold green]\nProfile: [cyan]{kp_id}[/cyan]", border_style="magenta"))
-    
-    # 1. Fetch Rotation
-    with console.status("[bold yellow]Fetching Wiki rotation...[/bold yellow]"):
-        rotation_data = fetch_wiki_rotation() or FALLBACK_ROTATION
-            
-    # 2. Daily & Weekly Logic
-    now_utc = datetime.datetime.now(datetime.timezone.utc)
-    days_since_monday = now_utc.weekday()
-    monday_reset = now_utc - datetime.timedelta(days=days_since_monday)
-    
-    with console.status("[bold yellow]Fetching Killproof.me clears...[/bold yellow]"):
-        clear_data = fetch_clear_data(kp_id)
-    
-    if not clear_data and not gw2_api_key:
-        console.print("[bold red]Error: Could not retrieve clear data from Killproof.me.[/bold red]")
-        return
-    if not clear_data:
-        clear_data = {}
-
-    if gw2_api_key:
-        with console.status("[bold yellow]Fetching official GW2 API clears...[/bold yellow]"):
-            gw2_clears = fetch_gw2_api_clears(gw2_api_key)
-            if gw2_clears:
-                clear_data.update(gw2_clears)
-            else:
-                console.print("[bold red]Warning: Could not retrieve or parse official GW2 API data.[/bold red]")
-
-    # --- VIEW 1: TODAY'S BOUNTIES ---
-    today_bounties = get_bounties_for_date(rotation_data, now_utc)
-    table_today = Table(title=f"1) Daily Bounties: {now_utc.strftime('%Y-%m-%d')}", show_header=True, header_style="bold cyan")
-    table_today.add_column("Category", style="dim")
-    table_today.add_column("Bounty Boss", style="bold white")
-    table_today.add_column("Status", justify="left")
-
-    for cat in ["Boss 1", "Boss 2", "Boss 3", "Boss 4"]:
-        boss = today_bounties[cat]
-        status, category = check_boss_status(boss, clear_data)
+    while True:
+        console.clear()
+        console.print(Panel.fit(f"[bold green]GW2 Daily Bounty Tracker[/bold green]\nProfile: [cyan]{kp_id}[/cyan]", border_style="magenta"))
         
-        status_style = "green" if "✅" in status else "red"
-        # Optional: tag strikes in the table
-        display_boss = boss + " [dim](Strike)[/dim]" if category == "strike" else boss
-        table_today.add_row(cat, display_boss, f"[{status_style}]{status}[/{status_style}]")
-    
-    # --- VIEW 2: WEEKLY MISSING BOUNTIES (Mon -> Today) ---
-    table_weekly = Table(title="2) Missing Bounties from this week (Mon -> Today)", show_header=True, header_style="bold yellow")
-    table_weekly.add_column("Date", style="dim")
-    table_weekly.add_column("Bounty Boss", style="bold white")
-    table_weekly.add_column("Status", justify="left")
+        # 1. Fetch Rotation
+        with console.status("[bold yellow]Fetching Wiki rotation...[/bold yellow]"):
+            rotation_data = fetch_wiki_rotation() or FALLBACK_ROTATION
+                
+        # 2. Daily & Weekly Logic
+        now_utc = datetime.datetime.now(datetime.timezone.utc)
+        days_since_monday = now_utc.weekday()
+        monday_reset = now_utc - datetime.timedelta(days=days_since_monday)
+        
+        with console.status("[bold yellow]Fetching Killproof.me clears...[/bold yellow]"):
+            clear_data = fetch_clear_data(kp_id)
+        
+        if not clear_data and not gw2_api_key:
+            console.print("[bold red]Error: Could not retrieve clear data from Killproof.me.[/bold red]")
+            user_choice = input('\nPress [R] to Retry, [Q] to Quit: ').strip().lower()
+            if user_choice == 'q':
+                break
+            continue
+            
+        if not clear_data:
+            clear_data = {}
 
-    has_missing_weekly = False
-    for i in range(days_since_monday + 1):
-        target_date = monday_reset + datetime.timedelta(days=i)
-        day_bounties = get_bounties_for_date(rotation_data, target_date)
-        for boss in day_bounties.values():
+        if gw2_api_key:
+            with console.status("[bold yellow]Fetching official GW2 API clears...[/bold yellow]"):
+                gw2_clears = fetch_gw2_api_clears(gw2_api_key)
+                if gw2_clears:
+                    clear_data.update(gw2_clears)
+                else:
+                    console.print("[bold red]Warning: Could not retrieve or parse official GW2 API data.[/bold red]")
+
+        # --- VIEW 1: TODAY'S BOUNTIES ---
+        today_bounties = get_bounties_for_date(rotation_data, now_utc)
+        table_today = Table(title=f"1) Daily Bounties: {now_utc.strftime('%Y-%m-%d')}", show_header=True, header_style="bold cyan")
+        table_today.add_column("Category", style="dim")
+        table_today.add_column("Bounty Boss", style="bold white")
+        table_today.add_column("Status", justify="left")
+
+        for cat in ["Boss 1", "Boss 2", "Boss 3", "Boss 4"]:
+            boss = today_bounties[cat]
             status, category = check_boss_status(boss, clear_data)
-            if "Missing" in status:
-                display_boss = boss + " [dim](Strike)[/dim]" if category == "strike" else boss
-                table_weekly.add_row(target_date.strftime("%a %d.%m"), display_boss, f"[red]{status}[/red]")
-                has_missing_weekly = True
-    
-    view2_renderable = table_weekly if has_missing_weekly else Panel("[green]✔ No missing bounties from earlier this week![/green]", border_style="green")
-    
-    # --- SHARED DATA FOR OVERVIEW TABLES ---
-    # Build map: api_key -> list of upcoming day strings (today included)
-    upcoming_bounties = {}  # api_key (lower) -> List[day_str]
-    for i in range(days_since_monday, 7):
-        target_date = monday_reset + datetime.timedelta(days=i)
-        day_name = target_date.strftime("%a")
-        day_bounties = get_bounties_for_date(rotation_data, target_date)
-        for boss in day_bounties.values():
-            _, cat_key = get_mapping_data(boss)
-            key = (cat_key or boss).lower()
-            if key not in upcoming_bounties:
-                upcoming_bounties[key] = []
-            upcoming_bounties[key].append(day_name)
+            
+            status_style = "green" if "✅" in status else "red"
+            display_boss = boss + " [dim](Strike)[/dim]" if category == "strike" else boss
+            table_today.add_row(cat, display_boss, f"[{status_style}]{status}[/{status_style}]")
+        
+        # --- VIEW 2: WEEKLY MISSING BOUNTIES (Mon -> Today) ---
+        table_weekly = Table(title="2) Missing Bounties from this week (Mon -> Today)", show_header=True, header_style="bold yellow")
+        table_weekly.add_column("Date", style="dim")
+        table_weekly.add_column("Bounty Boss", style="bold white")
+        table_weekly.add_column("Status", justify="left")
 
-    # --- VIEW 3: COMPLETE WEEKLY RAID OVERVIEW ---
-    today_name = now_utc.strftime("%a")
-    table_raids = generate_overview_table("3) All Raid Bosses – Weekly Overview", ALL_RAID_WINGS, upcoming_bounties, clear_data, today_name)
+        has_missing_weekly = False
+        for i in range(days_since_monday + 1):
+            target_date = monday_reset + datetime.timedelta(days=i)
+            day_bounties = get_bounties_for_date(rotation_data, target_date)
+            for boss in day_bounties.values():
+                status, category = check_boss_status(boss, clear_data)
+                if "Missing" in status:
+                    display_boss = boss + " [dim](Strike)[/dim]" if category == "strike" else boss
+                    table_weekly.add_row(target_date.strftime("%a %d.%m"), display_boss, f"[red]{status}[/red]")
+                    has_missing_weekly = True
+        
+        view2_renderable = table_weekly if has_missing_weekly else Panel("[green]✔ No missing bounties from earlier this week![/green]", border_style="green")
+        
+        # --- SHARED DATA FOR OVERVIEW TABLES ---
+        upcoming_bounties = {}  # api_key (lower) -> List[day_str]
+        for i in range(days_since_monday, 7):
+            target_date = monday_reset + datetime.timedelta(days=i)
+            day_name = target_date.strftime("%a")
+            day_bounties = get_bounties_for_date(rotation_data, target_date)
+            for boss in day_bounties.values():
+                _, cat_key = get_mapping_data(boss)
+                key = (cat_key or boss).lower()
+                if key not in upcoming_bounties:
+                    upcoming_bounties[key] = []
+                upcoming_bounties[key].append(day_name)
 
-    # --- VIEW 4: COMPLETE WEEKLY STRIKE OVERVIEW ---
-    table_strikes = generate_overview_table("4) All Strike Missions – Weekly Overview", ALL_STRIKES, upcoming_bounties, clear_data, today_name)
+        # --- VIEW 3: COMPLETE WEEKLY RAID OVERVIEW ---
+        today_name = now_utc.strftime("%a")
+        table_raids = generate_overview_table("3) All Raid Bosses – Weekly Overview", ALL_RAID_WINGS, upcoming_bounties, clear_data, today_name)
 
-    # Combine into a single grid to ensure consistent column alignment
-    grid = Table.grid(padding=(1, 4))
-    grid.add_row(table_today, view2_renderable)
-    grid.add_row(table_raids, table_strikes)
-    console.print(grid)
+        # --- VIEW 4: COMPLETE WEEKLY STRIKE OVERVIEW ---
+        table_strikes = generate_overview_table("4) All Strike Missions – Weekly Overview", ALL_STRIKES, upcoming_bounties, clear_data, today_name)
 
-    console.print("[dim]* ✔ indicates the clear is also registered on Killproof.me[/dim]\n")
+        # Combine into a single grid to ensure consistent column alignment
+        grid = Table.grid(padding=(1, 4))
+        grid.add_row(table_today, view2_renderable)
+        grid.add_row(table_raids, table_strikes)
+        console.print(grid)
 
-    input('Press ENTER to exit')
+        console.print("[dim]* ✔ indicates the clear is also registered on Killproof.me[/dim]\n")
+
+        user_choice = input("Press [R] to Refresh, [Q] to Quit: ").strip().lower()
+        if user_choice == 'q':
+            break
 
 if __name__ == "__main__":
     main()
