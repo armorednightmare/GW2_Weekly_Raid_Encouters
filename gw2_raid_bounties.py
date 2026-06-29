@@ -25,8 +25,8 @@ WIKI_URL = "https://wiki.guildwars2.com/wiki/Daily_Raid_Bounties"
 FALLBACK_ROTATION = {
     "Boss 1": { "cycle": 6, "bosses": ["Shiverpeaks Pass", "Voice and Claw", "Fraenir of Jormag", "Gorseval", "Cairn", "Mursaat Overseer"] },
     "Boss 2": { "cycle": 12, "bosses": ["Aetherblade Hideout", "Cardinal Sabir", "Whisper of Jormag", "Vale Guardian", "Cosmic Observatory", "Cold War", "Boneskinner", "Sabetha", "Xunlai Jade Junkyard", "Temple of Febe", "Keep Construct", "Kela"] },
-    "Boss 3": { "cycle": 12, "bosses": ["Slothasor", "Matthias", "Xera", "Samarog", "Conjured Amalgamate", "Twin Largos", "Decima, the Stormsinger", "Cardinal Adina", "Old Lion's Court", "Ura, the Steamshrieker", "Kaineng Overlook", "Deimos"] },
-    "Boss 4": { "cycle": 6, "bosses": ["Qadim", "Qadim the Peerless", "Soulless Horror", "Harvest Temple", "Dhuum", "Greer, the Blightbringer"] }
+    "Boss 3": { "cycle": 12, "bosses": ["Slothasor", "Matthias", "Xera", "Samarog", "Conjured Amalgamate", "Twin Largos", "Decima", "Cardinal Adina", "Old Lion's Court", "Ura", "Kaineng Overlook", "Deimos"] },
+    "Boss 4": { "cycle": 6, "bosses": ["Qadim", "Qadim the Peerless", "Soulless Horror", "Harvest Temple", "Dhuum", "Greer"] }
 }
 
 # --- MAPPING TO API ---
@@ -46,8 +46,10 @@ MAPPING = {
     "Conjured Amalgamate": ("raid", "Conjured Amalgamate"),
     "Twin Largos": ("raid", "Twin Largos"),
     "Decima, the Stormsinger": ("raid", "Decima, the Stormsinger"),
+    "Decima": ("raid", "Decima, the Stormsinger"),
     "Cardinal Adina": ("raid", "Cardinal Adina"),
     "Ura, the Steamshrieker": ("raid", "Ura, the Steamshrieker"),
+    "Ura": ("raid", "Ura, the Steamshrieker"),
     "Deimos": ("raid", "Deimos"),
     "Qadim": ("raid", "Qadim"),
     "Qadim the Peerless": ("raid", "Qadim the Peerless"),
@@ -56,6 +58,7 @@ MAPPING = {
     # Dhuum (Wiki) <-> Voice in the Void (Wing List/API) have no common words for fuzzy matching
     "Voice in the Void": ("raid", "Voice in the Void"),
     "Greer, the Blightbringer": ("raid", "Greer, the Blightbringer"),
+    "Greer": ("raid", "Greer, the Blightbringer"),
     
     # Event-style / Other Raids (Will not be in Wiki rotation, but used for full missing list)
     "Spirit Woods": ("raid", "Spirit Woods"),
@@ -119,19 +122,34 @@ ALL_STRIKES = {
 def fetch_wiki_rotation():
     """Scrapes the bounty rotation directly from GW2 Wiki."""
     try:
-        res = requests.get(WIKI_URL, timeout=10)
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+        res = requests.get(WIKI_URL, headers=headers, timeout=10)
         if res.status_code != 200:
             return None
         
         soup = BeautifulSoup(res.text, "html.parser")
         tables = soup.find_all("table", class_="mech1")
         
-        if len(tables) < 4:
+        boss_tables = {}
+        for table in tables:
+            th = table.find("th")
+            if th:
+                header_text = th.text.strip()
+                if header_text in ["Boss 1", "Boss 2", "Boss 3", "Boss 4"]:
+                    boss_tables[header_text] = table
+                    
+        if len(boss_tables) < 4:
             return None
             
         dynamic_rotation = {}
-        for i, table in enumerate(tables[:4]):
-            boss_key = f"Boss {i+1}"
+        for i in range(1, 5):
+            boss_key = f"Boss {i}"
+            table = boss_tables.get(boss_key)
+            if not table:
+                return None
+                
             bosses = []
             for row in table.find_all("tr")[1:]:
                 td = row.find("td")
